@@ -22,7 +22,7 @@
         ><span class="brand-mark">t.</span><span>terra<span class="brand-period">.</span></span></a
       >
       <div class="top-location">Казахстан <span>/</span> Павлодар</div>
-      <span class="version">Пилотная версия <span>01</span></span>
+      <span class="version">Пилотная версия <span>02</span></span>
     </header>
     <main>
       <div class="page-heading">
@@ -38,8 +38,8 @@
         <aside class="sidebar">
           <div class="section-label"><span>01</span> Территория</div>
           <h2 id="area-title">Павлодар · Восток</h2>
-          <p class="secondary">
-            Стартовая область для исследования.<br />Границы можно изменить на карте.
+          <p class="secondary" id="area-description">
+            Стартовая область для исследования. Границы можно изменить на карте.
           </p>
           <div class="area-data">
             <span>Площадь области</span><strong id="area-size">— км²</strong>
@@ -74,26 +74,44 @@
           </p>
           <button class="primary full" id="search-scenes">Найти снимки <span>↗</span></button>
           <p id="search-status" class="status" aria-live="polite">
-            Готово к поиску спутниковых снимков
+            Выберите область на подробной карте, затем найдите снимки для сравнения.
           </p>
           <div class="source-note">
             <span class="source-square"></span>
-            <div><strong>Sentinel-2</strong><span>Открытые данные · 10 м / пиксель</span></div>
+            <div>
+              <strong id="active-source">World Imagery</strong
+              ><span id="active-source-note">Подробная спутниковая подложка</span>
+            </div>
           </div>
         </aside>
         <div class="map-workspace">
           <div class="map-toolbar">
             <div class="segmented" role="group" aria-label="Режим карты">
-              <button id="mode-map" class="active" aria-pressed="true">Карта</button
-              ><button id="mode-compare" aria-pressed="false" disabled>Сравнение</button>
+              <button id="mode-detail" class="active" aria-pressed="true">Подробный спутник</button>
+              <button id="mode-map" aria-pressed="false">Карта</button>
+              <button id="mode-compare" aria-pressed="false">История</button>
             </div>
-            <button class="text-button" id="fit-area">К области <span>↗</span></button>
+            <div class="map-actions">
+              <button
+                class="text-button"
+                id="zoom-detail"
+                title="Приблизить центр выбранной области"
+              >
+                Рассмотреть здания <span>＋</span>
+              </button>
+              <button class="text-button" id="fit-area">К области <span>↗</span></button>
+            </div>
           </div>
           <div class="map-wrap">
             <div id="map" aria-label="Карта Павлодара"></div>
             <div class="map-caption">
               <span class="caption-square"></span
-              ><span id="map-caption-text">Исследуемая область</span>
+              ><span id="map-caption-text">World Imagery · подробная подложка</span>
+            </div>
+            <div class="center-mark" id="center-mark" aria-hidden="true"></div>
+            <div class="detail-notice" id="detail-notice" role="status" hidden>
+              <span id="detail-notice-text"></span>
+              <button id="retry-detail" class="text-button" hidden>Повторить</button>
             </div>
             <div id="draw-instruction" class="draw-instruction" hidden>
               Выберите два противоположных угла области
@@ -107,7 +125,7 @@
             </div>
           </div>
           <div class="map-bottom">
-            <span id="map-summary">Выберите годы и найдите снимки</span
+            <span id="map-summary">Подробная подложка · приблизьте нужный участок</span
             ><label id="swipe-control" hidden
               >До
               <input
@@ -119,7 +137,33 @@
                 aria-label="Граница сравнения снимков"
               />
               После</label
-            ><span class="resolution">Масштаб съёмки: 10 м</span>
+            ><span class="resolution" id="map-resolution">Детализация зависит от участка</span>
+          </div>
+          <div class="imagery-info" id="detail-info" aria-live="polite">
+            <div>
+              <span class="info-label">Снимок в центре карты</span
+              ><strong id="detail-date">Проверяем дату…</strong>
+            </div>
+            <div>
+              <span class="info-label">Исходное разрешение</span
+              ><strong id="detail-resolution">—</strong>
+            </div>
+            <div>
+              <span class="info-label">Поставщик снимка</span
+              ><strong id="detail-provider">World Imagery</strong>
+            </div>
+            <p class="imagery-disclaimer" id="detail-disclaimer">
+              Дата относится к точке в центре карты. Соседние участки могут быть сняты в другое
+              время.
+            </p>
+            <a
+              class="source-link"
+              id="detail-source"
+              target="_blank"
+              rel="noopener noreferrer"
+              hidden
+              >Метаданные ↗</a
+            >
           </div>
         </div>
       </section>
@@ -174,9 +218,9 @@
       <section class="method-note">
         <div class="section-label"><span>i</span> Как читать карту</div>
         <p>
-          Снимки Sentinel-2 показывают крупные изменения застройки и растительности. Облачность,
-          тени и время съёмки влияют на вид территории. Граница на карте — область исследования, а
-          не кадастровый участок.
+          «Подробный спутник» помогает рассмотреть здания и выбрать участок. Для сравнения лет
+          нажмите «История»: там используются датированные снимки Sentinel-2 с разрешением 10 м.
+          Граница на карте — область исследования, а не кадастровый участок.
         </p>
         <p>
           Автоматическое выделение изменений и расчёт выбросов пока не подключены. По двум снимкам
@@ -187,6 +231,12 @@
     <footer>
       <span>terra. <span class="footer-separator">/</span> Павлодар</span>
       <div>
+        <a
+          href="https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9"
+          target="_blank"
+          rel="noopener noreferrer"
+          >World Imagery ↗</a
+        >
         <a
           href="https://planetarycomputer.microsoft.com/dataset/sentinel-2-l2a"
           target="_blank"

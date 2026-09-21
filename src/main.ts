@@ -1,6 +1,12 @@
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './style.css';
+import {
+  WORLD_IMAGERY_TILE_URL,
+  WORLD_IMAGERY_ATTRIBUTION,
+  fetchDetailMetadata,
+  type ImageryMetadata,
+} from './detail-imagery';
 import { DEFAULT_BBOX, boundsOf, areaKm2, validateArea, type BBox } from './geo';
 import {
   STAC,
@@ -14,7 +20,7 @@ import {
 } from './satellite';
 
 type Side = 0 | 1;
-type MapMode = 'map' | 'compare';
+type MapMode = 'detail' | 'map' | 'compare';
 type Pair<T> = [T, T];
 interface AppState {
   bbox: BBox;
@@ -66,7 +72,7 @@ const state: AppState = {
   scenes: [[], []],
   selected: [null, null],
   layers: [null, null],
-  mode: 'map',
+  mode: 'detail',
   busy: false,
   drawing: false,
   firstCorner: null,
@@ -74,7 +80,7 @@ const state: AppState = {
   renderRevision: 0,
   tileErrors: 0,
 };
-const map = L.map('map', { zoomControl: false, minZoom: 10, maxZoom: 18 }).setView(
+const map = L.map('map', { zoomControl: false, minZoom: 10, maxZoom: 19 }).setView(
   [52.295, 76.995],
   13,
 );
@@ -84,7 +90,20 @@ const baseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', 
   maxZoom: 19,
   attribution:
     '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>',
-}).addTo(map);
+});
+// World Imagery has no native tiles above z17 in the verified Pavlodar area.
+// Higher zooms enlarge existing tiles instead of displaying its no-data images.
+const DETAIL_NATIVE_ZOOM = 17;
+const detailPane = map.createPane('detailImagery');
+detailPane.style.zIndex = '250';
+const detailLayer = L.tileLayer(WORLD_IMAGERY_TILE_URL, {
+  pane: 'detailImagery',
+  maxNativeZoom: DETAIL_NATIVE_ZOOM,
+  maxZoom: 19,
+  minZoom: 10,
+  keepBuffer: 1,
+  attribution: WORLD_IMAGERY_ATTRIBUTION,
+});
 const afterPane = map.createPane('satelliteAfter');
 afterPane.style.zIndex = '300';
 const beforePane = map.createPane('satelliteBefore');
@@ -97,6 +116,13 @@ const boundary = L.rectangle(boundsOf(state.bbox), {
 }).addTo(map);
 let draft: L.Rectangle | null = null;
 let marker: L.CircleMarker | null = null;
+let metadataController: AbortController | null = null;
+let metadataViewKey: string | null = null;
+let metadataTimer: ReturnType<typeof setTimeout> | undefined;
+let detailLoadTimer: ReturnType<typeof setTimeout> | undefined;
+let detailLoadErrors = 0;
+let detailLoadSuccesses = 0;
+const metadataCache = new Map<string, ImageryMetadata>();
 const fitArea = () => map.fitBounds(boundsOf(state.bbox), { padding: [45, 45], maxZoom: 15 });
 fitArea();
 function status(message: string, error = false) {
@@ -164,7 +190,17 @@ function fillCard(i: Side) {
 }
 function setBusy(busy: boolean) {
   state.busy = busy;
-  for (const s of ['#search-scenes', '#year-before', '#year-after', '#draw-area', '#reset-area'])
+  for (const s of [
+    '#search-scenes',
+    '#year-before',
+    '#year-after',
+    '#draw-area',
+    '#reset-area',
+    '#mode-detail',
+    '#mode-map',
+    '#mode-compare',
+    '#zoom-detail',
+  ])
     $<HTMLButtonElement | HTMLSelectElement>(s).disabled = busy;
   for (const p of ['before', 'after'])
     $<HTMLSelectElement>('#' + p + '-scene').disabled =
@@ -182,10 +218,8 @@ function clearComparison() {
   state.selected = [null, null];
   fillCard(0);
   fillCard(1);
-  setMode('map');
-  $<HTMLButtonElement>('#mode-compare').disabled = true;
+  setMode(state.mode === 'compare' ? 'detail' : state.mode);
   $('#scene-count').textContent = 'Два периода · один участок';
-  $('#map-summary').textContent = 'Выберите годы и найдите снимки';
 }
 function updateClip() {
   const size = map.getSize(),
@@ -202,29 +236,188 @@ function setMode(mode: MapMode) {
   if (mode === 'compare' && !state.layers.every(Boolean)) return;
   state.mode = mode;
   const compare = mode === 'compare';
-  baseLayer.setOpacity(compare ? 0 : 1);
+  const detailed = mode === 'detail';
+  map.setMaxZoom(compare ? 18 : 19);
+  if (mode === 'map') baseLayer.addTo(map);
+  else map.removeLayer(baseLayer);
+  if (detailed) detailLayer.addTo(map);
+  else {
+    map.removeLayer(detailLayer);
+    clearTimeout(detailLoadTimer);
+    clearMetadata();
+  }
+  for (const layer of state.layers) {
+    if (!layer) continue;
+    if (compare) layer.addTo(map);
+    else map.removeLayer(layer);
+  }
   for (const pane of ['satelliteBefore', 'satelliteAfter'])
     getPane(pane).style.display = compare ? '' : 'none';
   for (const s of ['#before-label', '#after-label', '#swipe-divider', '#swipe-control'])
     $(s).hidden = !compare;
+  $('#detail-info').hidden = !detailed;
+  $('#center-mark').hidden = !detailed;
+  $('#zoom-detail').hidden = !detailed;
+  if (!detailed) $('#detail-notice').hidden = true;
   for (const [id, active] of [
-    ['#mode-map', !compare],
+    ['#mode-detail', detailed],
+    ['#mode-map', mode === 'map'],
     ['#mode-compare', compare],
   ] as const) {
     $(id).classList.toggle('active', active);
     $(id).setAttribute('aria-pressed', String(active));
   }
   boundary.setStyle({
-    color: compare ? '#fff' : '#426495',
+    color: mode === 'map' ? '#426495' : '#fff',
     weight: 2,
-    fillOpacity: compare ? 0 : 0.03,
-    dashArray: compare ? '6 5' : '',
+    fillOpacity: mode === 'map' ? 0.03 : 0,
+    dashArray: mode === 'map' ? '' : '6 5',
   });
   $('#map-caption-text').textContent = compare
     ? 'Sentinel-2 · исследуемая область'
-    : 'Исследуемая область';
+    : detailed
+      ? 'World Imagery · подробная подложка'
+      : 'OpenStreetMap · исследуемая область';
+  $('#active-source').textContent = compare
+    ? 'Sentinel-2'
+    : detailed
+      ? 'World Imagery'
+      : 'OpenStreetMap';
+  $('#active-source-note').textContent = compare
+    ? 'Снимки по годам · 10 м / пиксель'
+    : detailed
+      ? 'Подробная спутниковая подложка'
+      : 'Улицы и ориентиры';
+  updateMapSummary();
+  if (detailed) scheduleMetadata();
   updateClip();
 }
+function updateMapSummary() {
+  if (state.mode === 'detail') {
+    $('#map-summary').textContent = 'Подробная подложка · выбранные годы относятся к «Истории»';
+    $('#map-resolution').textContent =
+      map.getZoom() > DETAIL_NATIVE_ZOOM
+        ? 'Увеличение исходной подложки'
+        : 'Детализация зависит от участка';
+  } else if (state.mode === 'map') {
+    $('#map-summary').textContent = 'Карта улиц · граница области исследования';
+    $('#map-resolution').textContent = 'OpenStreetMap';
+  } else {
+    const [before, after] = state.selected;
+    $('#map-summary').textContent =
+      before && after
+        ? 'A — ' +
+          new Date(dateOf(before)).getUTCFullYear() +
+          ' / B — ' +
+          new Date(dateOf(after)).getUTCFullYear()
+        : 'Сравнение снимков Sentinel-2';
+    $('#map-resolution').textContent = 'Исходные снимки: 10 м / пиксель';
+  }
+}
+function clearMetadata() {
+  clearTimeout(metadataTimer);
+  metadataController?.abort();
+  metadataController = null;
+  metadataViewKey = null;
+  $('#detail-date').textContent = 'Проверяем дату…';
+  $('#detail-resolution').textContent = '—';
+  $('#detail-provider').textContent = 'World Imagery';
+  $('#detail-source').hidden = true;
+  $('#detail-disclaimer').textContent =
+    'Дата относится к точке в центре карты. Соседние участки могут быть сняты в другое время.';
+}
+function showMetadata(metadata: ImageryMetadata | null) {
+  $('#detail-date').textContent = metadata?.date
+    ? dateLabel(metadata.date)
+    : 'Дата съёмки недоступна';
+  $('#detail-resolution').textContent = metadata?.sourceResolutionM
+    ? number(metadata.sourceResolutionM, 2) + ' м / пиксель'
+    : 'Нет данных';
+  $('#detail-provider').textContent = metadata?.provider || 'World Imagery';
+  const link = $<HTMLAnchorElement>('#detail-source');
+  link.hidden = !metadata;
+  if (metadata) link.href = metadata.metadataUrl;
+  $('#detail-disclaimer').textContent =
+    (metadata?.sampleResolutionM
+      ? 'Шаг подложки этого уровня: ' + number(metadata.sampleResolutionM, 2) + ' м. '
+      : '') +
+    'Данные относятся к точке в центре карты; соседние участки могут иметь другую дату и детализацию.';
+}
+function currentMetadataKey() {
+  const center = map.getCenter();
+  return [
+    center.lng.toFixed(5),
+    center.lat.toFixed(5),
+    Math.min(map.getZoom(), DETAIL_NATIVE_ZOOM),
+  ].join('/');
+}
+function scheduleMetadata(force = false) {
+  if (state.mode !== 'detail') return;
+  const key = currentMetadataKey();
+  // A resized metadata panel emits moveend without changing the map center.
+  // Keep its content stable instead of starting another loading/layout cycle.
+  if (!force && key === metadataViewKey) return;
+  clearMetadata();
+  metadataViewKey = key;
+  metadataTimer = setTimeout(() => void refreshMetadata(), 300);
+}
+async function refreshMetadata() {
+  if (state.mode !== 'detail') return;
+  metadataController?.abort();
+  const controller = new AbortController();
+  metadataController = controller;
+  const center = map.getCenter();
+  const zoom = Math.min(map.getZoom(), DETAIL_NATIVE_ZOOM);
+  const key = currentMetadataKey();
+  try {
+    const metadata =
+      metadataCache.get(key) ||
+      (await fetchDetailMetadata(center.lng, center.lat, zoom, controller.signal));
+    if (controller.signal.aborted || state.mode !== 'detail') return;
+    if (metadata) {
+      if (metadataCache.size >= 40) metadataCache.clear();
+      metadataCache.set(key, metadata);
+    }
+    showMetadata(metadata);
+  } catch (error) {
+    if (!controller.signal.aborted && state.mode === 'detail') {
+      showMetadata(null);
+      $('#detail-date').textContent = 'Метаданные временно недоступны';
+    }
+  }
+}
+function detailNotice(message: string | null, retry = false) {
+  $('#detail-notice').hidden = state.mode !== 'detail' || !message;
+  $('#detail-notice-text').textContent = message || '';
+  $('#retry-detail').hidden = !retry;
+}
+detailLayer.on('loading', () => {
+  detailLoadErrors = 0;
+  detailLoadSuccesses = 0;
+  detailNotice('Загружаем подробную подложку…');
+  clearTimeout(detailLoadTimer);
+  detailLoadTimer = setTimeout(
+    () => detailNotice('Подложка загружается дольше обычного.', true),
+    20000,
+  );
+});
+detailLayer.on('tileload', () => detailLoadSuccesses++);
+detailLayer.on('tileerror', () => detailLoadErrors++);
+detailLayer.on('load', () => {
+  clearTimeout(detailLoadTimer);
+  detailNotice(
+    detailLoadErrors > 0
+      ? detailLoadSuccesses
+        ? 'Часть подложки не загрузилась.'
+        : 'Подробная подложка недоступна. Можно открыть «Карту».'
+      : null,
+    detailLoadErrors > 0,
+  );
+});
+$('#retry-detail').onclick = () => {
+  detailLayer.redraw();
+  scheduleMetadata(true);
+};
 async function renderPair() {
   const selected = requireSelectedPair();
   const revision = ++state.renderRevision;
@@ -268,7 +461,6 @@ async function renderPair() {
       }),
   );
   for (const layer of previous) if (layer) map.removeLayer(layer);
-  $<HTMLButtonElement>('#mode-compare').disabled = false;
   setMode('compare');
   $('#before-label').textContent = 'A · ' + shortDate(dateOf(selected[0]));
   $('#after-label').textContent = 'B · ' + shortDate(dateOf(selected[1]));
@@ -276,9 +468,8 @@ async function renderPair() {
   if (revision !== state.renderRevision) return;
   loading(null);
   if (results.some((r) => r.successes === 0)) {
-    setMode('map');
+    setMode('detail');
     status('Изображения не загрузились. Повторите поиск или выберите другую дату.', true);
-    $('#map-summary').textContent = 'Снимки найдены, изображения недоступны';
     return;
   }
   $('#map-summary').textContent =
@@ -337,8 +528,7 @@ async function searchScenes() {
   } catch (e) {
     if (revision === state.revision) {
       clearLayers();
-      setMode('map');
-      $<HTMLButtonElement>('#mode-compare').disabled = true;
+      setMode('detail');
       status(errorMessage(e), true);
     }
   } finally {
@@ -364,8 +554,7 @@ for (const [p, i] of [
       await renderPair();
     } catch (error) {
       clearLayers();
-      setMode('map');
-      $<HTMLButtonElement>('#mode-compare').disabled = true;
+      setMode('detail');
       status(errorMessage(error), true);
     } finally {
       loading(null);
@@ -381,6 +570,9 @@ function setArea(b: BBox, isDefault = false) {
   updateArea();
   clearComparison();
   $('#area-title').textContent = isDefault ? 'Павлодар · Восток' : 'Моя область · Павлодар';
+  $('#area-description').textContent = isDefault
+    ? 'Стартовая область для исследования. Границы можно изменить на карте.'
+    : 'Выбранная вами область исследования. Границы можно изменить на карте.';
   status('Область выбрана. Нажмите «Найти снимки».');
   fitArea();
 }
@@ -454,6 +646,18 @@ map.on('mousemove', (e) => {
   else draft.setBounds(b);
 });
 map.on('move zoom resize', updateClip);
+map.on('movestart', () => {
+  if (state.mode === 'detail') clearMetadata();
+});
+map.on('moveend', () => {
+  updateMapSummary();
+  scheduleMetadata();
+});
+// Mode controls and metadata can resize the map without a window resize.
+const mapResizeObserver = new ResizeObserver(() => {
+  map.invalidateSize({ debounceMoveend: true });
+});
+mapResizeObserver.observe($('#map'));
 $<HTMLInputElement>('#swipe').oninput = updateClip;
 const handle = $('#swipe-divider span');
 handle.onpointerdown = (e) => {
@@ -475,8 +679,27 @@ handle.onpointerup = (e) => {
 $('#search-scenes').onclick = searchScenes;
 $('#reset-area').onclick = () => setArea(DEFAULT_BBOX, true);
 $('#fit-area').onclick = fitArea;
+$('#zoom-detail').onclick = () => {
+  const b = state.bbox;
+  map.setView([(b[1] + b[3]) / 2, (b[0] + b[2]) / 2], DETAIL_NATIVE_ZOOM);
+};
+$('#mode-detail').onclick = () => setMode('detail');
 $('#mode-map').onclick = () => setMode('map');
-$('#mode-compare').onclick = () => setMode('compare');
+$('#mode-compare').onclick = () => {
+  const selected = state.selected;
+  const requestedYears = [
+    Number($<HTMLSelectElement>('#year-before').value),
+    Number($<HTMLSelectElement>('#year-after').value),
+  ];
+  if (
+    state.layers.every(Boolean) &&
+    selected.every(
+      (scene, i) => scene && new Date(dateOf(scene)).getUTCFullYear() === requestedYears[i],
+    )
+  ) {
+    setMode('compare');
+  } else void searchScenes();
+};
 fillCard(0);
 fillCard(1);
-void searchScenes();
+setMode('detail');

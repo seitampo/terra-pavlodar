@@ -633,7 +633,7 @@ footer div {
     flex-wrap: wrap;
   }
   .resolution {
-    display: none;
+    white-space: normal;
   }
   .scene-card {
     gap: 15px;
@@ -775,6 +775,135 @@ footer div {
   height: auto;
   padding-top: 11px;
   padding-bottom: 11px;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  margin-left: auto;
+}
+.segmented {
+  max-width: 100%;
+}
+.segmented button {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.imagery-info {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 22px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--line);
+  background: #fafbfc;
+}
+.info-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.imagery-info strong {
+  display: block;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.imagery-disclaimer {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 4px 0 0;
+}
+.imagery-info .source-link {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 0;
+}
+.center-mark {
+  position: absolute;
+  z-index: 402;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px #000);
+}
+.center-mark::before,
+.center-mark::after {
+  content: '';
+  position: absolute;
+  background: #fff;
+}
+.center-mark::before {
+  width: 14px;
+  height: 1px;
+  top: 6px;
+}
+.center-mark::after {
+  width: 1px;
+  height: 14px;
+  left: 6px;
+}
+.detail-notice {
+  position: absolute;
+  z-index: 410;
+  bottom: 34px;
+  left: 14px;
+  right: 14px;
+  width: fit-content;
+  max-width: calc(100% - 28px);
+  background: #fffffff0;
+  color: var(--ink);
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 12px;
+  box-shadow: 0 1px 4px #0002;
+}
+.detail-notice button {
+  min-height: 32px;
+  color: var(--blue);
+  padding: 0;
+}
+@media (max-width: 1000px) {
+  .map-toolbar {
+    align-items: stretch;
+  }
+  .segmented {
+    width: 100%;
+  }
+  .segmented button {
+    padding: 7px 10px;
+  }
+  .imagery-info {
+    gap: 8px 14px;
+  }
+}
+@media (max-width: 680px) {
+  .imagery-info {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 14px 12px;
+  }
+  .map-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .map-caption {
+    right: 54px;
+    max-width: none;
+    width: fit-content;
+    left: 10px;
+    top: 11px;
+  }
 }
 .topbar {
   min-height: 78px;
