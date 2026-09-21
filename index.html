@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f8fa" />
+    <meta
+      name="description"
+      content="Сравнение спутниковых снимков территории в Павлодаре. Выберите участок, годы и изучите изменения на реальных снимках Sentinel-2."
+    />
+    <title>Terra — Павлодар</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%232f466d' d='M0 0h32v32H0z'/%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2' d='M6 10h20M16 10v16M6 6h20'/%3E%3C/svg%3E"
+    />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Terra — главная"
+        ><span class="brand-mark">t.</span><span>terra<span class="brand-period">.</span></span></a
+      >
+      <div class="top-location">Казахстан <span>/</span> Павлодар</div>
+      <span class="version">Пилотная версия <span>01</span></span>
+    </header>
+    <main>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">СПУТНИКОВОЕ НАБЛЮДЕНИЕ</div>
+          <h1>Территория в деталях</h1>
+        </div>
+        <div class="heading-note">
+          Павлодарская область<br /><span>52.29° N &nbsp; 76.97° E</span>
+        </div>
+      </div>
+      <section class="workspace" aria-label="Спутниковая карта">
+        <aside class="sidebar">
+          <div class="section-label"><span>01</span> Территория</div>
+          <h2 id="area-title">Павлодар · Восток</h2>
+          <p class="secondary">
+            Стартовая область для исследования.<br />Границы можно изменить на карте.
+          </p>
+          <div class="area-data">
+            <span>Площадь области</span><strong id="area-size">— км²</strong>
+          </div>
+          <button class="outline full" id="draw-area">
+            <span class="icon">⌖</span> Выбрать свою область
+          </button>
+          <button class="text-button full" id="reset-area">Вернуть стартовую область</button>
+          <div class="section-label divided"><span>02</span> Период сравнения</div>
+          <div class="year-fields">
+            <label
+              >До<select id="year-before">
+                <option>2020</option>
+                <option>2021</option>
+                <option>2022</option>
+                <option>2023</option>
+                <option>2024</option>
+              </select></label
+            ><span>→</span
+            ><label
+              >После<select id="year-after">
+                <option>2021</option>
+                <option>2022</option>
+                <option>2023</option>
+                <option>2024</option>
+                <option selected>2025</option>
+              </select></label
+            >
+          </div>
+          <p class="field-note">
+            Июнь — август. Один сезон помогает корректнее сравнить территорию.
+          </p>
+          <button class="primary full" id="search-scenes">Найти снимки <span>↗</span></button>
+          <p id="search-status" class="status" aria-live="polite">
+            Готово к поиску спутниковых снимков
+          </p>
+          <div class="source-note">
+            <span class="source-square"></span>
+            <div><strong>Sentinel-2</strong><span>Открытые данные · 10 м / пиксель</span></div>
+          </div>
+        </aside>
+        <div class="map-workspace">
+          <div class="map-toolbar">
+            <div class="segmented" role="group" aria-label="Режим карты">
+              <button id="mode-map" class="active" aria-pressed="true">Карта</button
+              ><button id="mode-compare" aria-pressed="false" disabled>Сравнение</button>
+            </div>
+            <button class="text-button" id="fit-area">К области <span>↗</span></button>
+          </div>
+          <div class="map-wrap">
+            <div id="map" aria-label="Карта Павлодара"></div>
+            <div class="map-caption">
+              <span class="caption-square"></span
+              ><span id="map-caption-text">Исследуемая область</span>
+            </div>
+            <div id="draw-instruction" class="draw-instruction" hidden>
+              Выберите два противоположных угла области
+              <button id="cancel-draw" aria-label="Отменить выбор">×</button>
+            </div>
+            <div class="compare-label before-label" id="before-label" hidden></div>
+            <div class="compare-label after-label" id="after-label" hidden></div>
+            <div class="swipe-divider" id="swipe-divider" hidden><span>↔</span></div>
+            <div id="map-loading" class="map-loading" hidden>
+              <span class="spinner"></span><span id="map-loading-text">Подбираем снимки…</span>
+            </div>
+          </div>
+          <div class="map-bottom">
+            <span id="map-summary">Выберите годы и найдите снимки</span
+            ><label id="swipe-control" hidden
+              >До
+              <input
+                id="swipe"
+                type="range"
+                min="0"
+                max="100"
+                value="50"
+                aria-label="Граница сравнения снимков"
+              />
+              После</label
+            ><span class="resolution">Масштаб съёмки: 10 м</span>
+          </div>
+        </div>
+      </section>
+      <section id="scene-section" class="scene-section" aria-label="Снимки для сравнения">
+        <div class="section-heading">
+          <h2>Снимки для сравнения</h2>
+          <span id="scene-count">Два периода · один участок</span>
+        </div>
+        <div class="scene-grid">
+          <article class="scene-card" id="scene-before">
+            <div class="scene-index">A <span>ДО</span></div>
+            <div class="scene-content">
+              <h3 id="before-date">Лето 2020</h3>
+              <label class="scene-select-label" for="before-scene"
+                >Снимок<select id="before-scene" disabled>
+                  <option>После поиска появятся доступные даты</option>
+                </select></label
+              >
+              <p id="before-meta" class="secondary">Выберем снимок с минимальной облачностью</p>
+              <a
+                id="before-source"
+                class="source-link"
+                hidden
+                target="_blank"
+                rel="noopener noreferrer"
+                >Источник снимка ↗</a
+              >
+            </div>
+          </article>
+          <article class="scene-card" id="scene-after">
+            <div class="scene-index">B <span>ПОСЛЕ</span></div>
+            <div class="scene-content">
+              <h3 id="after-date">Лето 2025</h3>
+              <label class="scene-select-label" for="after-scene"
+                >Снимок<select id="after-scene" disabled>
+                  <option>После поиска появятся доступные даты</option>
+                </select></label
+              >
+              <p id="after-meta" class="secondary">Снимки одного сезона для сравнения</p>
+              <a
+                id="after-source"
+                class="source-link"
+                hidden
+                target="_blank"
+                rel="noopener noreferrer"
+                >Источник снимка ↗</a
+              >
+            </div>
+          </article>
+        </div>
+      </section>
+      <section class="method-note">
+        <div class="section-label"><span>i</span> Как читать карту</div>
+        <p>
+          Снимки Sentinel-2 показывают крупные изменения застройки и растительности. Облачность,
+          тени и время съёмки влияют на вид территории. Граница на карте — область исследования, а
+          не кадастровый участок.
+        </p>
+        <p>
+          Автоматическое выделение изменений и расчёт выбросов пока не подключены. По двум снимкам
+          нельзя достоверно определить выбросы CO₂ конкретного участка.
+        </p>
+      </section>
+    </main>
+    <footer>
+      <span>terra. <span class="footer-separator">/</span> Павлодар</span>
+      <div>
+        <a
+          href="https://planetarycomputer.microsoft.com/dataset/sentinel-2-l2a"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Данные Sentinel-2 ↗</a
+        ><span>© OpenStreetMap contributors</span>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,4 +1,10 @@
 .sites-runtime/
+.openai/
 .env
+.env.*
+!.env.example
 node_modules/
+dist/
 *.log
+playwright-report/
+test-results/
